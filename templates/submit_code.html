@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>코드 제출</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        .container {
+            max-width: 800px;
+            margin: auto;
+            background: white;
+            padding: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-top: 20px;
+        }
+        #results {
+            border: 1px solid #ddd;
+            padding: 10px;
+            background-color: #f8f9fa;
+            margin-top: 20px;
+        }
+        .loading {
+            font-size: 1.2em;
+            color: #007bff;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-light bg-light">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="/"><img src="/static/MSJ_logo.png" alt="대회 로고" style="height: 50px;"> </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav justify-content-center flex-grow-1 pe-3">
+                    <li class="nav-item">
+                        <a class="nav-link" href="/open_contest">
+                            <img src="/static/contest_attend.png" alt="대회 로고" style="height: 20px;"> 대회 개최
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/attend_contest">
+                            <img src="/static/contest_join.png" alt="대회 로고" style="height: 20px;"> 대회 참여
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/question_board">
+                            <img src="/static/question.png" alt="대회 로고" style="height: 20px;"> 질문 게시판
+                        </a>
+                    </li>
+                    <li class="nav-item"><a class="nav-link" href="/mypage"><img src="/static/mypage.png" alt="대회 로고" style="height: 20px;">마이페이지</a></li>
+                </ul>
+            </div>
+        </div>
+    </nav><br>
+    <div class="container">
+        <h2>코드 제출</h2>
+        <form id="submitForm">
+            <div class="mb-3">
+                <label for="language" class="form-label">언어 선택</label>
+                <select class="form-select" id="language" required>
+                    <option value="C">C</option>
+                    <option value="Python3">Python3</option>
+                </select>
+            </div>
+            <div class="mb-3">
+                <label for="code" class="form-label">코드</label>
+                <textarea class="form-control" id="code" rows="10" required></textarea>
+            </div>
+            <button type="button" class="btn btn-primary" onclick="submitCode()">제출</button>
+        </form>
+        <div id="results" class="mt-3">
+            <p class="loading">결과를 받는 중...</p>
+        </div>
+    </div>
+    <script>
+        function parseProblemIdFromURL() {
+            const pathArray = window.location.pathname.split('/');
+            return pathArray[pathArray.length - 1]; // Gets the last element, which should be the problem ID
+        }
+        
+        function submitCode() {
+            document.getElementById('results').innerHTML = '<p class="loading">결과를 받는 중...</p>';
+            const language = document.getElementById('language').value;
+            const sourceCode = encodeURIComponent(document.getElementById('code').value);
+            const problemId = parseProblemIdFromURL();
+        
+            fetch('/api/answer_submit', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    language: language,
+                    source_code: sourceCode,
+                    problem_id: problemId
+                })
+            })
+            .then(response => {
+                if (response.ok) {
+                    return response.body.getReader(); // Get the reader for the body stream
+                }
+                throw new Error('Failed to submit code.');
+            })
+            .then(reader => {
+                const decoder = new TextDecoder('utf-8');
+                let dataString = '';
+        
+                // Function to read each chunk
+                function read() {
+                    return reader.read().then(({done, value}) => {
+                        if (done) {
+                            // Handle the last chunk of data
+                            processDataString(dataString);
+                            return;
+                        }
+                        dataString += decoder.decode(value, {stream: true}); // Decode each chunk and add to our data string
+                        if (dataString.includes('\n')) {
+                            processDataString(dataString);
+                            dataString = ''; // Reset the data string after processing
+                        }
+                        read(); // Call read again to continue reading
+                    });
+                }
+        
+                read().catch(error => {
+                    console.error('Error reading the stream:', error);
+                    document.getElementById('results').textContent = 'Error reading the stream.';
+                });
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                document.getElementById('results').textContent = 'Failed to load results.';
+            });
+        }
+        
+        function processDataString(dataString) {
+            const messages = dataString.split('\n');
+            messages.forEach(message => {
+                if (message.startsWith('data:')) {
+                    const dataContent = message.slice(5).trim(); // Remove 'data:' prefix
+                    try {
+                        const jsonData = JSON.parse(dataContent);
+                        const resultText = `<br>정답 여부: ${jsonData.correct}, 정답률: ${jsonData.percentage}`;
+                        if (jsonData.correct == 'X') {
+                            alert("틀렸습니다.");
+                        }
+                        if (jsonData.correct == 'O' && jsonData.percentage == '100%') {
+                            alert("맞았습니다!");
+                        }
+                        document.getElementById('results').innerHTML += resultText;
+                    } catch (e) {
+                        console.error('Failed to parse JSON:', e);
+                    }
+                }
+            });
+        }
+        
+        
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.min.js"></script>
+</body>
+</html>
